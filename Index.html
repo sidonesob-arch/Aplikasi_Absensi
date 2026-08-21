@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Absensi Guru</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #eef2f7; padding: 20px; }
+        .container { max-width: 600px; margin: auto; }
+        .card { background: white; border-radius: 15px; padding: 25px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h2 { color: #1a237e; margin-bottom: 15px; border-bottom: 3px solid #1a237e; padding-bottom: 10px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: 600; margin-bottom: 5px; color: #333; }
+        input, select { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; }
+        input:focus { border-color: #1a237e; outline: none; }
+        button { width: 100%; padding: 14px; background: #1a237e; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.3s; margin-top: 10px; }
+        button:hover { background: #0d1555; }
+        button.danger { background: #c62828; }
+        button.danger:hover { background: #8e0000; }
+        button.success { background: #2e7d32; }
+        button.success:hover { background: #1b5e20; }
+        button.warning { background: #e65100; }
+        button.warning:hover { background: #bf360c; }
+        #reader { width: 100%; margin: 15px 0; display: none; }
+        .hidden { display: none !important; }
+        .result-box { padding: 15px; border-radius: 10px; margin: 15px 0; display: none; }
+        .result-box.success { background: #e8f5e9; border: 2px solid #4caf50; color: #1b5e20; display: block; }
+        .result-box.error { background: #ffebee; border: 2px solid #ef5350; color: #b71c1c; display: block; }
+        .result-box.info { background: #e3f2fd; border: 2px solid #2196f3; color: #0d47a1; display: block; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
+        th { background: #1a237e; color: white; padding: 10px; text-align: left; }
+        td { padding: 10px; border-bottom: 1px solid #ddd; }
+        tr.minggu { background: #ffcdd2 !important; }
+        tr.minggu td { color: #b71c1c; font-weight: bold; }
+        .tab-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+        .tab-buttons button { flex: 1; min-width: 100px; }
+        .header { display: flex; justify-content: space-between; align-items: center; }
+        .logout-btn { background: #c62828; padding: 8px 20px; border-radius: 8px; color: white; border: none; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="app">
+    <!-- HEADER -->
+    <div class="card">
+        <div class="header">
+            <h2>📚 Absensi Guru</h2>
+            <button class="logout-btn" onclick="logout()">🚪 Logout</button>
+        </div>
+        <p id="statusLogin" style="color: #555;">Belum login</p>
+    </div>
+
+    <!-- LOGIN SECTION -->
+    <div class="card" id="loginSection">
+        <h2>🔐 Login Guru</h2>
+        <div class="form-group">
+            <label>Masukkan PIN Anda</label>
+            <input type="password" id="pinInput" placeholder="Masukkan PIN 4-6 digit" maxlength="6">
+        </div>
+        <button onclick="login()" class="success">Login</button>
+    </div>
+
+    <!-- DASHBOARD GURU (muncul setelah login) -->
+    <div id="dashboardSection" class="hidden">
+        
+        <!-- Scanner -->
+        <div class="card">
+            <h2>📸 Scanner Barcode</h2>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button onclick="toggleScanner('masuk')" class="success" style="flex:1;">📷 Buka Scanner (Masuk)</button>
+                <button onclick="toggleScanner('pulang')" class="warning" style="flex:1;">📷 Buka Scanner (Pulang)</button>
+                <button onclick="toggleScanner('tutup')" class="danger" style="flex:1;">✖ Tutup Scanner</button>
+            </div>
+            <div id="reader"></div>
+            <div id="scanResult" class="result-box"></div>
+        </div>
+
+        <!-- Rekap -->
+        <div class="card">
+            <h2>📊 Rekap Absensi</h2>
+            <div class="form-group">
+                <label>Periode</label>
+                <select id="periodeRekap">
+                    <option value="harian">Harian</option>
+                    <option value="mingguan">Mingguan</option>
+                    <option value="bulanan">Bulanan</option>
+                    <option value="semester">Semester</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Filter Kelas</label>
+                <select id="kelasFilter">
+                    <option value="">Semua Kelas</option>
+                    <option value="10A">10A</option>
+                    <option value="10B">10B</option>
+                    <option value="11A">11A</option>
+                    <option value="11B">11B</option>
+                    <option value="12A">12A</option>
+                    <option value="12B">12B</option>
+                </select>
+            </div>
+            <button onclick="loadRekap()" style="background:#1565c0;">🔍 Tampilkan Rekap</button>
+            <button onclick="downloadRekap()" style="background:#2e7d32;">📥 Download CSV</button>
+            <div id="rekapContainer"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ================== VARIABEL GLOBAL ==================
+const BACKEND_URL = "https://script.google.com/macros/s/AKfycbwqROrDOyw2BHpZudcph7_AqOogdy-mfxXzrGtexFfFy4Ii9Eci992_Jf2FcH9NufbnkA/exec"; // GANTI!
+let html5QrCode = null;
+let isLoggedIn = false;
+let pinGuru = "";
+let nipGuru = "";
+let namaGuru = "";
+let scanMode = "masuk"; // "masuk" atau "pulang"
+
+// ================== LOGIN ==================
+function login() {
+    const pin = document.getElementById('pinInput').value;
+    if (!pin || pin.length < 4) {
+        alert('Masukkan PIN minimal 4 digit!');
+        return;
+    }
+    
+    // Simulasi login (di real, cek ke backend)
+    // Karena backend belum punya endpoint cek PIN, kita pake simulasi dulu
+    if (pin === "1234" || pin === "5678") {
+        isLoggedIn = true;
+        pinGuru = pin;
+        namaGuru = pin === "1234" ? "Bu Rina" : "Pak Budi";
+        nipGuru = pin === "1234" ? "198765432100000001" : "198765432100000002";
+        document.getElementById('statusLogin').textContent = "✅ Login sebagai: " + namaGuru + " (NIP: " + nipGuru + ")";
+        document.getElementById('loginSection').classList.add('hidden');
+        document.getElementById('dashboardSection').classList.remove('hidden');
+    } else {
+        alert('❌ PIN tidak valid!');
+    }
+}
+
+// ================== LOGOUT ==================
+function logout() {
+    isLoggedIn = false;
+    if (html5QrCode) {
+        html5QrCode.stop();
+        html5QrCode = null;
+    }
+    document.getElementById('dashboardSection').classList.add('hidden');
+    document.getElementById('loginSection').classList.remove('hidden');
+    document.getElementById('statusLogin').textContent = 'Belum login';
+    document.getElementById('pinInput').value = '';
+    document.getElementById('reader').style.display = 'none';
+    document.getElementById('scanResult').className = 'result-box';
+    document.getElementById('scanResult').style.display = 'none';
+}
+
+// ================== SCANNER ==================
+function toggleScanner(mode) {
+    if (!isLoggedIn) {
+        alert('Silakan login terlebih dahulu!');
+        return;
+    }
+    
+    if (mode === 'tutup') {
+        if (html5QrCode) {
+            html5QrCode.stop();
+            html5QrCode = null;
+        }
+        document.getElementById('reader').style.display = 'none';
+        document.getElementById('scanResult').className = 'result-box';
+        document.getElementById('scanResult').style.display = 'none';
+        return;
+    }
+    
+    scanMode = mode;
+    const label = mode === 'masuk' ? 'Absen Masuk' : 'Absen Pulang';
+    document.getElementById('reader').style.display = 'block';
+    document.getElementById('scanResult').className = 'result-box';
+    document.getElementById('scanResult').style.display = 'none';
+    
+    if (html5QrCode) {
+        html5QrCode.stop();
+        html5QrCode = null;
+    }
+    
+    html5QrCode = new Html5Qrcode("reader");
+    html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 300, height: 200 } },
+        function(decodedText) {
+            // Hasil scan
+            prosesHasilScan(decodedText);
+        }
+    );
+}
+
+function prosesHasilScan(barcode) {
+    if (html5QrCode) {
+        html5QrCode.stop();
+        html5QrCode = null;
+    }
+    
+    const resultBox = document.getElementById('scanResult');
+    resultBox.style.display = 'block';
+    resultBox.className = 'result-box info';
+    resultBox.textContent = '⏳ Memproses...';
+    
+    // Kirim ke backend
+    const url = BACKEND_URL + '?action=scan&barcode=' + encodeURIComponent(barcode) + '&pin=' + pinGuru + '&jenisScan=' + scanMode;
+    
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            if (data.sukses) {
+                resultBox.className = 'result-box success';
+                resultBox.textContent = '✅ ' + data.pesan;
+            } else {
+                resultBox.className = 'result-box error';
+                resultBox.textContent = '❌ ' + data.pesan;
+            }
+        })
+        .catch(error => {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ Gagal terhubung ke server! Error: ' + error.message;
+        });
+}
+
+// ================== REKAP ==================
+function loadRekap() {
+    const periode = document.getElementById('periodeRekap').value;
+    const kelas = document.getElementById('kelasFilter').value;
+    const container = document.getElementById('rekapContainer');
+    
+    container.innerHTML = '<p>⏳ Memuat rekap...</p>';
+    
+    const url = BACKEND_URL + '?action=rekap&periode=' + periode + '&filter=' + encodeURIComponent(kelas);
+    
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            if (!data || data.length === 0) {
+                container.innerHTML = '<p style="color:#999;">📭 Tidak ada data untuk periode ini</p>';
+                return;
+            }
+            
+            let html = '<table>';
+            html += '<tr><th>Tanggal</th><th>NISN</th><th>Nama</th><th>Status</th><th>Pengabsen</th></tr>';
+            
+            data.forEach(row => {
+                const isMinggu = row.hariMinggu ? ' class="minggu"' : '';
+                html += `<tr${isMinggu}>`;
+                html += `<td>${new Date(row.tanggal).toLocaleDateString('id-ID')}</td>`;
+                html += `<td>${row.nisn_nip}</td>`;
+                html += `<td>${row.nama}</td>`;
+                html += `<td>${row.status}</td>`;
+                html += `<td>${row.pengabsen}</td>`;
+                html += '</tr>';
+            });
+            
+            html += '</table>';
+            container.innerHTML = html;
+        })
+        .catch(error => {
+            container.innerHTML = '<p style="color:red;">❌ Gagal memuat rekap!</p>';
+        });
+}
+
+// ================== DOWNLOAD ==================
+function downloadRekap() {
+    const periode = document.getElementById('periodeRekap').value;
+    const kelas = document.getElementById('kelasFilter').value;
+    
+    const url = BACKEND_URL + '?action=download&periode=' + periode + '&filter=' + encodeURIComponent(kelas);
+    
+    window.open(url, '_blank');
+}
+
+// ================== LOAD OTOMATIS ==================
+// Saat halaman dimuat, cek status login
+document.addEventListener('DOMContentLoaded', function() {
+    // Cek apakah sudah login (bisa pakai sessionStorage nanti)
+    const savedPin = sessionStorage.getItem('pinGuru');
+    if (savedPin) {
+        document.getElementById('pinInput').value = savedPin;
+        login();
+    }
+});
+
+// Simpan PIN ke session saat login berhasil (tambahkan di fungsi login)
+// Simpan setelah login berhasil:
+// sessionStorage.setItem('pinGuru', pin);
+</script>
+
+</body>
+</html>
